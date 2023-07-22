@@ -37,11 +37,15 @@ heat_state = False
 preheat_alarm = False
 element_run_time = timedelta(seconds=10) #Run time of the element in seconds
 element_off_time = timedelta(seconds=10) #Amount of seconds the element has to be off
-element_end_time = datetime.now() + element_run_time
-element_start_time = element_end_time + element_off_time
+element_end_time = datetime.now()
+element_start_time = datetime.now()
 set_pittemp = 0
 temppref = "F"
 socket.listen(1)
+temp0 = 0
+temp1 = 0
+temp2 = 0
+temp3 = 0
 
 #Set output for element control
 element_pin = 4 #This is BCM pin numbering
@@ -72,6 +76,10 @@ def listtostring(list):
 	return(res)
 
 def check_temp():
+	global temp0
+	global temp1
+	global temp2
+	global temp3
 	templist = []
 	c0 = chan0.value
 	c1 = chan1.value
@@ -95,6 +103,11 @@ def check_temp():
 	if (temppref == 'C'):
 		temparray = [c0, c1, c2, c3]
 		templist.append(temparray)
+		#set global temps
+		temp0 = c0
+		temp1 = c1
+		temp2 = c2
+		temp3 = c3
 	elif (temppref == 'F'):
 		f0 = calculate_temp_f(c0)
 		f1 = calculate_temp_f(c1)
@@ -102,7 +115,12 @@ def check_temp():
 		f3 = calculate_temp_f(c3)
 		temparray = [f0, f1, f2, f3]
 		templist.append(temparray)
-	return(templist)
+		#set global temps
+		temp0 = f0
+		temp1 = f1
+		temp2 = f2
+		temp3 = f3
+	#return(templist)
 
 def heat():
 	global element_state
@@ -127,7 +145,7 @@ def heat():
 				pass
 		else:
 			#Element is still on, check time
-			if (element_end_time >= datetime.now()):
+			if (element_end_time <= datetime.now()):
 				#Element has run long enough, switch off
 				element_state = False
 				#Turn off element
@@ -145,6 +163,7 @@ def heat():
 			GPIO.output(element_pin, False)
 			element_state = False
 			print('HEAT OFF!')
+			print('ELEMENT OFF!')
 			#set minimum off time
 			element_start_time = datetime.now() + element_off_time
 		else:
@@ -152,33 +171,20 @@ def heat():
 			#Do nothing
 			pass
 
-def check_pit_temp():
+def check_pit_temp(set_pittemp):
 	global heat_state
 	global preheat_alarm
-	###Calculate temp
-	c0 = chan0.value
-	#Calculate voltage
-	v0 = calculate_voltage(c0)
-	#Calculate resistance
-	r0 = calculate_resistance(v0)
-	#Calculate Celcius
-	c0 = calculate_temp_c(r0)
-	if (temppref == 'C'):
-		pittemp = c0
-	elif (temppref == 'F'):
-		f0 = calculate_temp_f(c0)
-		pittemp = f0
 	if (set_pittemp == 0):
 		#Pit set to 0, set heat_state to False
 		heat_state = False
-	elif ((set_pittemp > 0) and (set_pittemp < pittemp)):
+	elif ((set_pittemp > 0) and (set_pittemp < temp0)):
 		#pit temp high enough
 		heat_state = False
 		#if preheat alarm hasn't gone off, set it to go off
 		if not (preheat_alarm):
 			#sound some kind of alarm, hasn't been setup yet, would do it here
 			preheat_alarm = True
-	elif ((set_pittemp > 0) and (set_pittemp > pittemp)):
+	elif ((set_pittemp > 0) and (set_pittemp > temp0)):
 		#pit temp too low, turn heat on
 		heat_state = True
 
@@ -192,7 +198,7 @@ def piboss_cmd(data):
 		if (data ==  "vcheck"):
 			response += version
 		elif (data == "temp"):
-			templist = check_temp()
+			templist = [temp0, temp1, temp2, temp3]
 			tempstring = listtostring(templist)
 			response += tempstring
 		elif (data[0:6] == "setpit"):
@@ -203,7 +209,6 @@ def piboss_cmd(data):
 			preheat_alarm = False
 			set_pittemp = int(set_pittemp_array[1])
 			response += "Set Pit to " + str(set_pittemp) + temppref
-			#print("set_pittemp:" + str(set_pittemp) + "; temppref:" + temppref)
 		else:
 			response = "unrecognized"
 	else:
@@ -227,8 +232,8 @@ def com_loop():
 
 def temp_loop():
 	while True:
-		print("set_pittemp:" + str(set_pittemp) + "; temppref:" + temppref)
-		check_pit_temp()
+		check_temp()
+		check_pit_temp(set_pittemp)
 		heat()
 		sleep(2)
 
