@@ -5,10 +5,13 @@ import socket
 import busio
 import board
 import RPi.GPIO as GPIO
-import datetime
+from datetime import datetime
+from datetime import timedelta
+from time import sleep
 import adafruit_ads1x15.ads1115 as ADS
 from adafruit_ads1x15.analog_in import AnalogIn
-from multiprocessing import Process
+from threading import Thread
+#from multiprocessing import Process
 
 #initialize ADS
 i2c = busio.I2C(board.SCL, board.SDA)
@@ -32,12 +35,13 @@ delim = ";"
 element_state = False
 heat_state = False
 preheat_alarm = False
-element_run_time = datetime.timedelta(seconds=10) #Run time of the element in seconds
-element_off_time = datetime.timedelta(seconds=10) #Amount of seconds the element has to be off
-element_end_time = datetime.datetime.now() + element_run_time
+element_run_time = timedelta(seconds=10) #Run time of the element in seconds
+element_off_time = timedelta(seconds=10) #Amount of seconds the element has to be off
+element_end_time = datetime.now() + element_run_time
 element_start_time = element_end_time + element_off_time
 set_pittemp = 0
 temppref = "F"
+socket.listen(1)
 
 #Set output for element control
 element_pin = 4 #This is BCM pin numbering
@@ -100,7 +104,7 @@ def check_temp():
 		templist.append(temparray)
 	return(templist)
 
-def heat(heat_state):
+def heat():
 	global element_state
 	global element_end_time
 	global element_start_time
@@ -109,28 +113,28 @@ def heat(heat_state):
 		#Element needs to be on - heat up
 		if not (element_state):
 			#The element was off, check previous end time
-			if (element_start_time <= datetime.datetime.now()):
+			if (element_start_time <= datetime.now()):
 				#Element has been off long enough, start element
 				element_state = True
 				#Turn on element
 				GPIO.output(element_pin, True)
 				print('ELEMENT ON!')
 				#Set end time for element
-				element_end_time = datetime.datetime.now + element_run_time
+				element_end_time = datetime.now() + element_run_time
 			else:
 				#Element needs to be on, but hasn't hit run time limit/start time yet
 				#Do nothing
 				pass
 		else:
 			#Element is still on, check time
-			if (element_end_time >= datetime.datetime.now()):
+			if (element_end_time >= datetime.now()):
 				#Element has run long enough, switch off
 				element_state = False
 				#Turn off element
 				GPIO.output(element_pin, False)
 				print('ELEMENT OFF!')
 				#Set new start time
-				element_start_time = datetime.datetime.now() + element_off_time
+				element_start_time = datetime.now() + element_off_time
 			else:
 				#Element is still running and has time left
 				#Do nothing
@@ -142,13 +146,13 @@ def heat(heat_state):
 			element_state = False
 			print('HEAT OFF!')
 			#set minimum off time
-			element_start_time = datetime.datetime.now() + element_off_time
+			element_start_time = datetime.now() + element_off_time
 		else:
 			#Heat state is off and is still off
 			#Do nothing
 			pass
 
-def check_pit_temp(set_pittemp):
+def check_pit_temp():
 	global heat_state
 	global preheat_alarm
 	###Calculate temp
@@ -174,7 +178,7 @@ def check_pit_temp(set_pittemp):
 		if not (preheat_alarm):
 			#sound some kind of alarm, hasn't been setup yet, would do it here
 			preheat_alarm = True
-	elif ((set_pittemp > 0) and (setpittemp > pittemp)):
+	elif ((set_pittemp > 0) and (set_pittemp > pittemp)):
 		#pit temp too low, turn heat on
 		heat_state = True
 
@@ -197,9 +201,9 @@ def piboss_cmd(data):
 			#set desired pit temp
 			set_pittemp_array = data.split("=")
 			preheat_alarm = False
-			set_pittemp = set_pittemp_array[1]
-			response += "Set Pit to " + set_pittemp + temppref
-			print("set_pittemp:" + str(set_pittemp) + "; temppref:" + temppref)
+			set_pittemp = int(set_pittemp_array[1])
+			response += "Set Pit to " + str(set_pittemp) + temppref
+			#print("set_pittemp:" + str(set_pittemp) + "; temppref:" + temppref)
 		else:
 			response = "unrecognized"
 	else:
@@ -208,16 +212,15 @@ def piboss_cmd(data):
 
 def com_loop():
 	while True:
-		socket.listen(1)
 		c, addr = socket.accept()
 		data = c.recv(1024)
 		if data:
 			#Get data from PHP
 			result = data.decode() 
-			print("{} - Got data! - {}".format(datetime.datetime.now(), result))
+			print("{} - Got data! - {}".format(datetime.now(), result))
 			response = piboss_cmd(result)
 			#Now send databack to PHP
-			print("{} - Responding - {}".format(datetime.datetime.now(), response))
+			print("{} - Responding - {}".format(datetime.now(), response))
 			message = response
 			c.send(bytes(message,'utf-8'))
 		c.close()
@@ -225,9 +228,13 @@ def com_loop():
 def temp_loop():
 	while True:
 		print("set_pittemp:" + str(set_pittemp) + "; temppref:" + temppref)
-		check_pit_temp(set_pittemp)
-		heat(heat_state)
+		check_pit_temp()
+		heat()
+		sleep(2)
 
-if __name__ == '__main__':
-	Process(target=com_loop).start()
-	Process(target=temp_loop).start()
+Thread(target=com_loop).start()
+temp_loop()
+
+#if __name__ == '__main__':
+#	Process(target=com_loop).start()
+#	Process(target=temp_loop).start()
