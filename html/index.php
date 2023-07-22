@@ -2,8 +2,6 @@
 /*
 PiBoss v0.00
 
-Coded by Adam Marthaler
-
 TODO:
 
 */
