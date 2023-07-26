@@ -47,8 +47,9 @@ function ver_check($getver) {
 }
 
 function split_temp($tempstring) {
-	$tempstring = str_replace(array("[", "]", " "), "", $tempstring);
-	$temparray = explode(",", $tempstring);
+	//$tempstring = str_replace(array("[", "]", " "), "", $tempstring);
+	//$temparray = explode(",", $tempstring);
+	$temparray = explode(";", $tempstring);
 	return($temparray);
 }
 
